@@ -1,6 +1,6 @@
 {
-  "name": "似顏繪點名",
-  "short_name": "似顏繪",
+  "name": "Molly",
+  "short_name": "Molly",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
