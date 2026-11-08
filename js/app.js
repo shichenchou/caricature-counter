@@ -7,6 +7,10 @@ import { toCsv, formatTime, pad2 } from './csv.js';
 import { nearestCity, defaultTitle } from './places.js';
 import { setupGate } from './gate.js';
 
+const ICONS = {
+  trash: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+};
+
 const $ = (id) => document.getElementById(id);
 const ACTIVE_KEY = 'cc.activeProjectId';
 const STATE_LABEL = {
@@ -151,7 +155,7 @@ function renderCard(item) {
     <div class="card-actions">
       <button type="button" class="btn-small" data-act="send">🚀 AirDrop</button>
       <button type="button" class="btn-link" data-act="toggleSent"></button>
-      <button type="button" class="btn-link danger" data-act="delete">刪除</button>
+      <button type="button" class="btn-link btn-icon danger" data-act="delete" aria-label="刪除這一組">${ICONS.trash}</button>
     </div>`;
   li.querySelector('.tag').textContent = item.isWaiting ? `[ ⚠️ 備取第 ${item.no} 位 ]` : `#${pad2(item.no)} 正取`;
   li.querySelector('.count').textContent = `${item.count} 人`;
@@ -178,7 +182,7 @@ function updateSendButton() {
   save.textContent = `💾 存相簿（${n}）`;
   const del = $('btnDeleteSelected');
   del.disabled = n === 0;
-  del.textContent = `🗑 刪除（${n}）`;
+  del.querySelector('.count').textContent = `（${n}）`;
 }
 
 function render() {
