@@ -33,11 +33,14 @@
   </main>
 
   <footer class="actions">
-    <label class="btn-primary" id="btnAdd">＋ 新增（從相簿選）
+    <div id="selectionBar" class="selection-bar" hidden>
+      <button id="btnSendSelected" class="btn-send" type="button" disabled>🚀 AirDrop（0）</button>
+      <button id="btnSaveSelected" class="btn-save" type="button" disabled>💾 存相簿（0）</button>
+      <button id="btnDeleteSelected" class="btn-delete" type="button" disabled>🗑 刪除（0）</button>
+    </div>
+    <label class="btn-primary" id="btnAdd">＋ 新增
       <input id="fileInput" class="visually-hidden" type="file" accept="image/*" multiple>
     </label>
-    <button id="btnSendSelected" class="btn-send" type="button" disabled>🚀 傳給老師（0）</button>
-    <button id="btnDeleteSelected" class="btn-delete" type="button" disabled>🗑 刪除（0）</button>
   </footer>
 
   <dialog id="projectDialog">
@@ -67,6 +70,7 @@
       <ul id="confirmList" class="confirm-list"></ul>
       <p id="aiNote" class="muted"></p>
       <menu>
+        <button type="button" id="btnSaveBatch">💾 存到相簿</button>
         <button type="button" value="cancel" data-close>取消</button>
         <button value="ok" class="btn-primary">加入</button>
       </menu>

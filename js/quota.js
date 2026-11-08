@@ -13,6 +13,7 @@ export function computeStatus(project, records) {
   let waitingNo = 0;
   let sentPhotos = 0;
   let unsentPeople = 0;
+  let unsentPhotos = 0;
 
   const items = sorted.map((r) => {
     // 整組判定：這組加入前正取還沒滿就整組正取（允許彈性超額）
@@ -26,7 +27,10 @@ export function computeStatus(project, records) {
       regularCount += r.count;
     }
     if (r.isSent) sentPhotos++;
-    else unsentPeople += r.count;
+    else {
+      unsentPeople += r.count;
+      unsentPhotos++;
+    }
     return { ...r, isWaiting, no };
   });
 
@@ -44,6 +48,7 @@ export function computeStatus(project, records) {
     remaining: max - regularCount,
     sentPhotos,
     unsentPeople,
+    unsentPhotos,
     state,
   };
 }

@@ -20,7 +20,8 @@ csp = []
 try:
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        ctx = browser.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
+        ctx = browser.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True,
+                                  geolocation={'latitude': 22.62, 'longitude': 120.31}, permissions=['geolocation'])
         page = ctx.new_page()
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.on('dialog', lambda d: d.accept())
@@ -30,6 +31,7 @@ try:
         page.screenshot(path=str(SHOTS / '1-empty.png'))
 
         page.click('#btnNewProject')
+        expect(page.locator('input[name=projectTitle]')).to_have_value(re.compile(r'^\d+/\d+ 高雄$'))
         page.fill('input[name=projectTitle]', '11/8 高雄')
         page.fill('input[name=maxQuota]', '2')
         page.click('#projectDialog button[value=ok]')
@@ -37,7 +39,11 @@ try:
 
         page.set_input_files('#fileInput', [IMG, IMG])
         page.wait_for_selector('#confirmDialog[open]', timeout=90000)
-        expect(page.locator('#confirmList .ai').first).to_contain_text(re.compile(r'AI：\d+'))
+        expect(page.locator('#confirmList')).not_to_contain_text('AI：')
+        expect(page.locator('#aiNote')).to_contain_text('備註')
+        expect(page.locator('#btnSaveBatch')).to_be_visible()
+        page.click('#btnSaveBatch')
+        expect(page.locator('#toast')).to_contain_text(re.compile('不支援分享檔案|存相簿失敗'))
         page.locator('#confirmList li').first.locator('button[data-d="1"]').click()
         page.screenshot(path=str(SHOTS / '2-confirm.png'))
         page.locator('#confirmList li .thumb').first.click()
@@ -50,6 +56,13 @@ try:
         expect(page.locator('#regularList .card')).to_have_count(2)
         expect(page.locator('#statusBar')).to_contain_text('3 人')
         expect(page.locator('#statusBar')).to_contain_text('彈性超額中')
+        expect(page.locator('#regularList .card').first).to_contain_text('相簿未同步')
+        expect(page.locator('#selectionBar')).to_be_hidden()
+        page.locator('#regularList .card .thumb').first.click()
+        expect(page.locator('#previewDialog[open]')).to_be_visible()
+        page.screenshot(path=str(SHOTS / '9-card-preview.png'))
+        page.click('#previewDialog button[value=close]')
+        expect(page.locator('#previewDialog')).not_to_be_visible()
         page.screenshot(path=str(SHOTS / '3-over.png'))
 
         page.click('#btnSettings')
@@ -67,7 +80,9 @@ try:
         expect(page.locator('#statusBar')).to_contain_text('1 張')
 
         page.locator('#regularList .card .pick-box').nth(1).check()
-        expect(page.locator('#btnSendSelected')).to_have_text('🚀 傳給老師（1）')
+        expect(page.locator('#selectionBar')).to_be_visible()
+        expect(page.locator('#selectionBar button')).to_have_count(3)
+        expect(page.locator('#btnSendSelected')).to_have_text('🚀 AirDrop（1）')
         page.click('#btnSendSelected')
         expect(page.locator('#toast')).to_contain_text(re.compile('再按一次傳送|不支援分享檔案|分享失敗'))
         page.screenshot(path=str(SHOTS / '5-sent.png'))

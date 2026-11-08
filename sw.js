@@ -1,5 +1,5 @@
 // 每次改任何檔案都要把版本 +1，iPhone 才會更新快取
-const CACHE = 'cc-v2';
+const CACHE = 'cc-v3';
 const SHARDS = [1, 2, 3, 4, 5].map((i) => `vendor/model/ssdlite_mobilenet_v2/group1-shard${i}of5`);
 const ASSETS = [
   './',
@@ -12,6 +12,7 @@ const ASSETS = [
   'js/detect.js',
   'js/share.js',
   'js/csv.js',
+  'js/places.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',

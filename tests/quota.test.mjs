@@ -73,6 +73,7 @@ test('傳送統計：已傳張數、未傳人數', () => {
   const st = computeStatus(proj(40), [rec(1, 2, { isSent: true }), rec(2, 3), rec(3, 1, { isSent: true })]);
   assert.equal(st.sentPhotos, 2);
   assert.equal(st.unsentPeople, 3);
+  assert.equal(st.unsentPhotos, 1);
 });
 
 test('不改動傳入的 records', () => {

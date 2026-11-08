@@ -4,6 +4,7 @@ import { prepareImage } from './image.js';
 import { detectCount, loadModel } from './detect.js';
 import { shareFiles, fileNameFor, safeName } from './share.js';
 import { toCsv, formatTime, pad2 } from './csv.js';
+import { nearestCity, defaultTitle } from './places.js';
 
 const $ = (id) => document.getElementById(id);
 const ACTIVE_KEY = 'cc.activeProjectId';
@@ -107,7 +108,7 @@ function renderStatus(st) {
     ['正取', `${st.regularCount} / ${p.maxQuota}`],
     ...(p.allowWaitingList ? [['備取', `${st.waitingCount} 人`]] : []),
     ['名額', remainText],
-    ['未傳老師', `${st.unsentPeople} 人`],
+    ['未傳老師', `${st.unsentPhotos} 張照片 共 ${st.unsentPeople} 人`],
     ['已傳老師', `${st.sentPhotos} 張`],
   ];
   const el = $('statusBar');
@@ -144,9 +145,10 @@ function renderCard(item) {
         <button type="button" class="btn-round" data-act="inc" aria-label="加一">＋</button>
       </div>
       <div class="sent"></div>
+      <div class="album"></div>
     </div>
     <div class="card-actions">
-      <button type="button" class="btn-small" data-act="send">🚀 傳給老師</button>
+      <button type="button" class="btn-small" data-act="send">🚀 AirDrop</button>
       <button type="button" class="btn-link" data-act="toggleSent"></button>
       <button type="button" class="btn-link danger" data-act="delete">刪除</button>
     </div>`;
@@ -155,6 +157,9 @@ function renderCard(item) {
   li.querySelector('.sent').textContent = item.isSent
     ? `已傳給老師 🟢${item.sentAt ? ' ' + formatTime(item.sentAt).slice(11) : ''}`
     : '未傳送 ⏳';
+  const album = li.querySelector('.album');
+  album.classList.toggle('ok', item.albumSaved === true);
+  album.textContent = item.albumSaved ? '📷 相簿已同步' : '相簿未同步';
   li.querySelector('[data-act=toggleSent]').textContent = item.isSent ? '改回未傳' : '標為已傳';
   li.querySelector('.pick-box').checked = state.selected.has(item.id);
   thumbUrl(item.id).then((url) => { li.querySelector('.thumb').src = url; });
@@ -163,9 +168,13 @@ function renderCard(item) {
 
 function updateSendButton() {
   const n = state.selected.size;
+  $('selectionBar').hidden = n === 0;
   const btn = $('btnSendSelected');
   btn.disabled = n === 0;
-  btn.textContent = `🚀 傳給老師（${n}）`;
+  btn.textContent = `🚀 AirDrop（${n}）`;
+  const save = $('btnSaveSelected');
+  save.disabled = n === 0;
+  save.textContent = `💾 存相簿（${n}）`;
   const del = $('btnDeleteSelected');
   del.disabled = n === 0;
   del.textContent = `🗑 刪除（${n}）`;
@@ -199,10 +208,12 @@ function render() {
   updateSendButton();
 }
 
+// photo 可以是 Blob 或 { data, type }
 function openPreview(photo) {
   const dlg = $('previewDialog');
   const img = $('previewImg');
-  const url = URL.createObjectURL(new Blob([photo.data], { type: photo.type }));
+  const blob = photo instanceof Blob ? photo : new Blob([photo.data], { type: photo.type });
+  const url = URL.createObjectURL(blob);
   img.src = url;
   dlg.addEventListener('close', () => {
     img.removeAttribute('src');
@@ -225,7 +236,6 @@ function confirmCounts(prepared) {
       urls.push(url);
       li.innerHTML = `
         <img class="thumb" alt="">
-        <span class="ai"></span>
         <div class="counter">
           <button type="button" class="btn-round" data-d="-1" aria-label="減一">−</button>
           <span class="count"></span>
@@ -234,7 +244,6 @@ function confirmCounts(prepared) {
         <button type="button" class="btn-remove" aria-label="不加入這張">✕</button>`;
       li.querySelector('img').src = url;
       li.querySelector('img').addEventListener('click', () => openPreview(p.original));
-      li.querySelector('.ai').textContent = p.aiCount == null ? 'AI 未辨識' : `AI：${p.aiCount}`;
       const countEl = li.querySelector('.count');
       countEl.textContent = `${p.count} 人`;
       li.querySelector('.btn-remove').addEventListener('click', () => {
@@ -252,9 +261,28 @@ function confirmCounts(prepared) {
     }));
     $('aiNote').textContent = prepared.some((p) => p.aiCount == null)
       ? 'AI 模型還沒載入（第一次要在有網路時開啟），請手動確認人數。'
-      : 'AI 算的是人＋狗＋貓，請確認後再加入。';
+      : '備註：人與動物皆算一位，請確認後再加入。';
+    const saveBtn = $('btnSaveBatch');
+    saveBtn.textContent = '💾 存到相簿';
+    // 分享要在 click 裡、任何 await 之前呼叫，iOS 才認定是使用者手勢
+    saveBtn.onclick = async () => {
+      const kept = prepared.filter((p) => !p.removed);
+      if (!kept.length) return;
+      const title = state.project?.title ?? '';
+      const files = kept.map((p, i) => new File([p.original.data], `${safeName(title)}_${i + 1}.jpg`, { type: p.original.type }));
+      const result = await shareFiles(files, title);
+      if (result === 'shared') {
+        kept.forEach((p) => { p.albumSaved = true; });
+        saveBtn.textContent = '💾 已存相簿 ✓';
+      } else if (result === 'unsupported') {
+        toast('這個瀏覽器不支援分享檔案，請用 iPhone Safari');
+      } else if (result === 'error') {
+        toast('存相簿失敗，請再試一次');
+      }
+    };
     dlg.addEventListener('close', () => {
       urls.forEach((u) => URL.revokeObjectURL(u));
+      saveBtn.onclick = null;
       resolve(dlg.returnValue === 'ok');
     }, { once: true });
     dlg.returnValue = '';
@@ -315,6 +343,7 @@ async function onFilesPicked(e) {
         aiCount: p.aiCount,
         isSent: false,
         sentAt: null,
+        albumSaved: p.albumSaved === true,
         createdAt: now + i,
       },
       photo: { original: p.original, thumb: p.thumb },
@@ -372,7 +401,56 @@ async function sendRecords(ids) {
   }
 }
 
+async function saveSelectedToAlbum() {
+  const ids = [...state.selected];
+  if (!ids.length) return;
+  const missing = ids.filter((id) => !state.originals.has(id));
+  if (missing.length) {
+    await Promise.all(missing.map(thumbUrl));
+    const lost = ids.filter((id) => !state.originals.has(id));
+    toast(lost.length ? `有 ${lost.length} 組照片遺失，無法存相簿，請取消勾選或刪除` : '照片準備好了，請再按一次存相簿');
+    return;
+  }
+  const st = computeStatus(state.project, state.records);
+  const items = ids.map((id) => st.items.find((i) => i.id === id)).filter(Boolean);
+  const files = items.map((it) => {
+    const blob = state.originals.get(it.id);
+    return new File([blob], fileNameFor(state.project.title, it, blob.type), { type: blob.type || 'image/jpeg' });
+  });
+  const result = await shareFiles(files, state.project.title);
+  if (result === 'shared') {
+    const recs = items.map((it) => state.records.find((r) => r.id === it.id));
+    const prev = recs.map((r) => r.albumSaved);
+    recs.forEach((r) => { r.albumSaved = true; });
+    try {
+      await db.saveRecords(recs);
+      toast(`已存 ${recs.length} 張到相簿`);
+    } catch (err) {
+      console.error(err);
+      recs.forEach((r, i) => { r.albumSaved = prev[i]; });
+      toast('已分享，但標記失敗');
+    }
+    render();
+  } else if (result === 'unsupported') {
+    toast('這個瀏覽器不支援分享檔案，請用 iPhone Safari');
+  } else if (result === 'error') {
+    toast('存相簿失敗，請再試一次');
+  }
+}
+
+async function previewCard(id) {
+  if (!state.originals.has(id)) await thumbUrl(id);
+  const blob = state.originals.get(id);
+  if (blob) openPreview(blob);
+  else toast('找不到這組照片');
+}
+
 async function onCardClick(e) {
+  const thumb = e.target.closest('.card .thumb');
+  if (thumb) {
+    await previewCard(thumb.closest('.card').dataset.id);
+    return;
+  }
   const btn = e.target.closest('button[data-act]');
   if (!btn) return;
   const id = btn.closest('.card').dataset.id;
@@ -422,15 +500,28 @@ async function showStorage() {
   el.textContent = `已用空間 ${(usage / 1048576).toFixed(0)} MB／可用約 ${(quota / 1073741824).toFixed(1)} GB`;
 }
 
+function fillCityTitle(dlg, input) {
+  if (!navigator.geolocation) return;
+  const token = {};
+  fillCityTitle.token = token;
+  const auto = input.value;
+  navigator.geolocation.getCurrentPosition((pos) => {
+    if (fillCityTitle.token !== token || !dlg.open || input.value !== auto) return;
+    const city = nearestCity(pos.coords.latitude, pos.coords.longitude);
+    if (city) input.value = defaultTitle(new Date(), city);
+  }, () => {}, { timeout: 8000, maximumAge: 600000 });
+}
+
 function openProjectDialog(project) {
   const dlg = $('projectDialog');
   const f = $('projectForm').elements;
   $('projectDialogTitle').textContent = project ? '場次設定' : '新增場次';
-  f.projectTitle.value = project?.title ?? '';
+  f.projectTitle.value = project?.title ?? defaultTitle(new Date());
   f.maxQuota.value = project?.maxQuota ?? 40;
   f.allowWaitingList.checked = project?.allowWaitingList ?? false;
   $('projectExtra').hidden = !project;
   if (project) showStorage();
+  else fillCityTitle(dlg, f.projectTitle);
   dlg.returnValue = '';
   dlg.addEventListener('close', async () => {
     if (dlg.returnValue !== 'ok') return;
@@ -506,6 +597,7 @@ function bindEvents() {
   $('btnSettings').addEventListener('click', () => openProjectDialog(state.project));
   $('fileInput').addEventListener('change', onFilesPicked);
   $('btnSendSelected').addEventListener('click', () => sendRecords([...state.selected]));
+  $('btnSaveSelected').addEventListener('click', saveSelectedToAlbum);
   $('btnDeleteSelected').addEventListener('click', deleteSelected);
   $('btnExportCsv').addEventListener('click', exportCsv);
   $('btnDeleteProject').addEventListener('click', deleteCurrentProject);
