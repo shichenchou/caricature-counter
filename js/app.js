@@ -5,6 +5,7 @@ import { detectCount, loadModel } from './detect.js';
 import { shareFiles, fileNameFor, safeName } from './share.js';
 import { toCsv, formatTime, pad2 } from './csv.js';
 import { nearestCity, defaultTitle } from './places.js';
+import { setupGate } from './gate.js';
 
 const $ = (id) => document.getElementById(id);
 const ACTIVE_KEY = 'cc.activeProjectId';
@@ -627,4 +628,4 @@ async function init() {
   else warmUp();
 }
 
-init();
+setupGate(init);

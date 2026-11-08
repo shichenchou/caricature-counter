@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 import sys
@@ -11,6 +12,21 @@ SHOTS = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'tests' / 'screenshot
 SHOTS.mkdir(parents=True, exist_ok=True)
 PORT = 8765
 IMG = str(ROOT / 'icons' / 'icon-512.png')
+# 公開 repo 不放明碼：執行前 export CC_PASSWORD=<密碼>
+PASSWORD = os.environ.get('CC_PASSWORD')
+if not PASSWORD:
+    sys.exit('請先設定環境變數 CC_PASSWORD')
+
+
+def unlock(page):
+    expect(page.locator('#launcher')).to_be_visible()
+    expect(page.locator('#main')).to_be_hidden()
+    page.click('#btnOpenCounter')
+    page.fill('#passwordInput', PASSWORD)
+    page.click('#passwordDialog button[value=ok]')
+    expect(page.locator('#launcher')).to_be_hidden()
+    expect(page.locator('#main')).to_be_visible()
+
 
 server = subprocess.Popen([sys.executable, '-m', 'http.server', str(PORT)], cwd=ROOT,
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -27,6 +43,23 @@ try:
         page.on('dialog', lambda d: d.accept())
         page.on('console', lambda m: csp.append(m.text) if ('Content Security Policy' in m.text or 'Refused' in m.text) else None)
         page.goto(f'http://localhost:{PORT}/')
+        expect(page.locator('#launcher')).to_be_visible()
+        expect(page.locator('#main')).to_be_hidden()
+        expect(page.locator('.top')).to_be_hidden()
+        expect(page.locator('.actions')).to_be_hidden()
+        page.screenshot(path=str(SHOTS / '0-launcher.png'))
+        page.click('#btnOpenCounter')
+        expect(page.locator('#passwordDialog[open]')).to_be_visible()
+        page.fill('#passwordInput', '1234')
+        page.click('#passwordDialog button[value=ok]')
+        expect(page.locator('#passwordError')).to_have_text('密碼錯誤')
+        expect(page.locator('#passwordDialog[open]')).to_be_visible()
+        expect(page.locator('#passwordInput')).to_have_value('')
+        page.screenshot(path=str(SHOTS / '0b-password.png'))
+        page.click('#passwordDialog button[data-close]')
+        expect(page.locator('#passwordDialog')).not_to_be_visible()
+        expect(page.locator('#launcher')).to_be_visible()
+        unlock(page)
         expect(page.locator('#emptyState')).to_be_visible()
         page.screenshot(path=str(SHOTS / '1-empty.png'))
 
@@ -88,6 +121,7 @@ try:
         page.screenshot(path=str(SHOTS / '5-sent.png'))
 
         page.reload()
+        unlock(page)
         expect(page.locator('#regularList .card')).to_have_count(2)
 
         page.set_input_files('#fileInput', [IMG, IMG, IMG])
@@ -101,6 +135,7 @@ try:
         expect(page.locator('#toast')).to_contain_text('已加入 2 組')
 
         page.reload()
+        unlock(page)
         expect(page.locator('#main .card')).to_have_count(4)
         page.locator('#main .card .pick-box').nth(0).check()
         page.locator('#main .card .pick-box').nth(1).check()

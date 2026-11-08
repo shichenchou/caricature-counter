@@ -13,7 +13,12 @@
   <link rel="stylesheet" href="css/app.css">
   <title>似顏繪點名</title>
 </head>
-<body>
+<body class="locked">
+  <section id="launcher" class="launcher">
+    <h1>似顏繪點名</h1>
+    <button id="btnOpenCounter" class="btn-primary btn-launch" type="button">似顏繪人數</button>
+  </section>
+
   <header class="top">
     <div class="project-bar">
       <select id="projectSelect" aria-label="切換場次"></select>
@@ -73,6 +78,20 @@
         <button type="button" id="btnSaveBatch">💾 存到相簿</button>
         <button type="button" value="cancel" data-close>取消</button>
         <button value="ok" class="btn-primary">加入</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="passwordDialog">
+    <form method="dialog" id="passwordForm">
+      <h3>請輸入密碼</h3>
+      <label class="field">密碼
+        <input id="passwordInput" name="password" type="password" inputmode="numeric" autocomplete="off">
+      </label>
+      <p id="passwordError" class="error" hidden>密碼錯誤</p>
+      <menu>
+        <button type="button" value="cancel" data-close>取消</button>
+        <button value="ok" class="btn-primary">進入</button>
       </menu>
     </form>
   </dialog>
