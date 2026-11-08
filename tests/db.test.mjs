@@ -44,3 +44,16 @@ test('addRecords 中途丟錯時整批不寫入', async () => {
   assert.equal((await db.listRecords('p9')).length, 0);
   assert.equal(await db.getPhoto('x1'), undefined);
 });
+
+test('deleteRecords 一次刪多筆紀錄和照片，其他筆不受影響', async () => {
+  await db.addRecords([
+    { record: r('d1', 'p5'), photo: { original: 'O', thumb: 'T' } },
+    { record: r('d2', 'p5'), photo: { original: 'O', thumb: 'T' } },
+    { record: r('d3', 'p5'), photo: { original: 'O', thumb: 'T' } },
+  ]);
+  await db.deleteRecords(['d1', 'd2']);
+  assert.deepEqual((await db.listRecords('p5')).map((x) => x.id), ['d3']);
+  assert.equal(await db.getPhoto('d1'), undefined);
+  assert.equal(await db.getPhoto('d2'), undefined);
+  assert.equal((await db.getPhoto('d3')).thumb, 'T');
+});

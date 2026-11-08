@@ -100,6 +100,17 @@ export function deleteRecord(id) {
   });
 }
 
+export function deleteRecords(ids) {
+  return run(['records', 'photos'], 'readwrite', (tx) => {
+    const records = tx.objectStore('records');
+    const photos = tx.objectStore('photos');
+    for (const id of ids) {
+      records.delete(id);
+      photos.delete(id);
+    }
+  });
+}
+
 export function deleteProject(projectId) {
   return run(['projects', 'records', 'photos'], 'readwrite', (tx) => {
     tx.objectStore('projects').delete(projectId);

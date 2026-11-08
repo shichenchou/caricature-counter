@@ -19,6 +19,7 @@
       <select id="projectSelect" aria-label="切換場次"></select>
       <button id="btnNewProject" class="btn-small" type="button">＋場次</button>
       <button id="btnSettings" class="btn-small" type="button" aria-label="場次設定">設定</button>
+      <button id="btnDeleteProject" class="btn-small danger" type="button" aria-label="刪除此場次">刪除</button>
     </div>
     <div id="statusBar" class="status"></div>
   </header>
@@ -36,6 +37,7 @@
       <input id="fileInput" class="visually-hidden" type="file" accept="image/*" multiple>
     </label>
     <button id="btnSendSelected" class="btn-send" type="button" disabled>🚀 傳給老師（0）</button>
+    <button id="btnDeleteSelected" class="btn-delete" type="button" disabled>🗑 刪除（0）</button>
   </footer>
 
   <dialog id="projectDialog">
@@ -51,7 +53,6 @@
       <div id="projectExtra" hidden>
         <p id="storageInfo" class="muted"></p>
         <button type="button" id="btnExportCsv" class="btn-small">匯出名單 CSV</button>
-        <button type="button" id="btnDeleteProject" class="btn-danger">刪除此場次</button>
       </div>
       <menu>
         <button type="button" value="cancel" data-close>取消</button>

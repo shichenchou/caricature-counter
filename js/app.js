@@ -51,6 +51,15 @@ function revokeThumbs() {
   state.thumbJobs.clear();
 }
 
+function forgetRecord(id) {
+  const url = state.thumbUrls.get(id);
+  if (url) URL.revokeObjectURL(url);
+  state.thumbUrls.delete(id);
+  state.originals.delete(id);
+  state.thumbJobs.delete(id);
+  state.selected.delete(id);
+}
+
 // 取縮圖時順便把原圖 Blob 留在記憶體，按傳送時才能不 await 直接叫分享選單
 async function thumbUrl(recordId) {
   if (state.thumbUrls.has(recordId)) return state.thumbUrls.get(recordId);
@@ -157,6 +166,9 @@ function updateSendButton() {
   const btn = $('btnSendSelected');
   btn.disabled = n === 0;
   btn.textContent = `🚀 傳給老師（${n}）`;
+  const del = $('btnDeleteSelected');
+  del.disabled = n === 0;
+  del.textContent = `🗑 刪除（${n}）`;
 }
 
 function render() {
@@ -166,6 +178,7 @@ function render() {
   $('btnAdd').classList.toggle('disabled', !has || state.busy);
   $('fileInput').disabled = !has;
   $('btnSettings').disabled = !has;
+  $('btnDeleteProject').disabled = !has;
   if (!has) {
     $('statusBar').replaceChildren();
     $('regularList').replaceChildren();
@@ -217,12 +230,18 @@ function confirmCounts(prepared) {
           <button type="button" class="btn-round" data-d="-1" aria-label="減一">−</button>
           <span class="count"></span>
           <button type="button" class="btn-round" data-d="1" aria-label="加一">＋</button>
-        </div>`;
+        </div>
+        <button type="button" class="btn-remove" aria-label="不加入這張">✕</button>`;
       li.querySelector('img').src = url;
       li.querySelector('img').addEventListener('click', () => openPreview(p.original));
       li.querySelector('.ai').textContent = p.aiCount == null ? 'AI 未辨識' : `AI：${p.aiCount}`;
       const countEl = li.querySelector('.count');
       countEl.textContent = `${p.count} 人`;
+      li.querySelector('.btn-remove').addEventListener('click', () => {
+        p.removed = true;
+        li.remove();
+        if (prepared.every((x) => x.removed)) dlg.close('cancel');
+      });
       li.addEventListener('click', (ev) => {
         const b = ev.target.closest('button[data-d]');
         if (!b) return;
@@ -278,6 +297,8 @@ async function onFilesPicked(e) {
     }
     if (!prepared.length) return;
     if (!(await confirmCounts(prepared))) return;
+    const kept = prepared.filter((p) => !p.removed);
+    if (!kept.length) return;
     if (state.project?.id !== project.id) {
       toast('場次已切換，這批沒有加入，請重新選照片');
       return;
@@ -285,7 +306,7 @@ async function onFilesPicked(e) {
 
     let seq = state.records.reduce((m, r) => Math.max(m, r.seq), 0);
     const now = Date.now();
-    const entries = prepared.map((p, i) => ({
+    const entries = kept.map((p, i) => ({
       record: {
         id: newId('rec'),
         projectId: project.id,
@@ -376,12 +397,7 @@ async function onCardClick(e) {
         if (!confirm('確定刪除這一組？編號會重新計算。')) return;
         await db.deleteRecord(id);
         state.records = state.records.filter((r) => r.id !== id);
-        state.selected.delete(id);
-        const url = state.thumbUrls.get(id);
-        if (url) URL.revokeObjectURL(url);
-        state.thumbUrls.delete(id);
-        state.originals.delete(id);
-        state.thumbJobs.delete(id);
+        forgetRecord(id);
         break;
       }
       case 'send':
@@ -441,17 +457,28 @@ function openProjectDialog(project) {
 async function deleteCurrentProject() {
   const p = state.project;
   if (!p) return;
-  const typed = prompt(`要刪除「${p.title}」和裡面所有照片，請輸入場次名稱確認：`);
-  if (typed === null) return;
-  if (typed.trim() !== p.title) {
-    toast('名稱不符，沒有刪除');
-    return;
-  }
-  $('projectDialog').close('cancel');
+  if (!confirm(`確定刪除「${p.title}」和裡面全部 ${state.records.length} 組？刪了不能復原。`)) return;
   await db.deleteProject(p.id);
   state.projects = state.projects.filter((x) => x.id !== p.id);
   await switchProject(state.projects[0]?.id ?? null);
   toast('已刪除場次');
+}
+
+async function deleteSelected() {
+  const ids = [...state.selected];
+  if (!ids.length) return;
+  if (!confirm(`確定刪除勾選的 ${ids.length} 組？編號會重新計算。`)) return;
+  try {
+    await db.deleteRecords(ids);
+  } catch (err) {
+    console.error(err);
+    toast(`刪除失敗：${err && err.name ? err.name : err}`);
+    return;
+  }
+  const gone = new Set(ids);
+  state.records = state.records.filter((r) => !gone.has(r.id));
+  ids.forEach(forgetRecord);
+  render();
 }
 
 async function exportCsv() {
@@ -479,6 +506,7 @@ function bindEvents() {
   $('btnSettings').addEventListener('click', () => openProjectDialog(state.project));
   $('fileInput').addEventListener('change', onFilesPicked);
   $('btnSendSelected').addEventListener('click', () => sendRecords([...state.selected]));
+  $('btnDeleteSelected').addEventListener('click', deleteSelected);
   $('btnExportCsv').addEventListener('click', exportCsv);
   $('btnDeleteProject').addEventListener('click', deleteCurrentProject);
   $('previewImg').addEventListener('click', () => $('previewDialog').close());
