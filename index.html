@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob:; script-src 'self' 'unsafe-eval'; style-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="似顏繪點名">
+  <meta name="theme-color" content="#fff7f2">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/app.css">
+  <title>似顏繪點名</title>
+</head>
+<body>
+  <header class="top">
+    <div class="project-bar">
+      <select id="projectSelect" aria-label="切換場次"></select>
+      <button id="btnNewProject" class="btn-small" type="button">＋場次</button>
+      <button id="btnSettings" class="btn-small" type="button" aria-label="場次設定">設定</button>
+    </div>
+    <div id="statusBar" class="status"></div>
+  </header>
+
+  <main id="main">
+    <p id="emptyState" class="empty" hidden>還沒有場次，先按「＋場次」建立。</p>
+    <h2 id="regularTitle" class="section-title">正取</h2>
+    <ul id="regularList" class="cards"></ul>
+    <h2 id="waitingTitle" class="section-title waiting" hidden>備取</h2>
+    <ul id="waitingList" class="cards"></ul>
+  </main>
+
+  <footer class="actions">
+    <label class="btn-primary" id="btnAdd">＋ 新增（從相簿選）
+      <input id="fileInput" class="visually-hidden" type="file" accept="image/*" multiple>
+    </label>
+    <button id="btnSendSelected" class="btn-send" type="button" disabled>🚀 傳給老師（0）</button>
+  </footer>
+
+  <dialog id="projectDialog">
+    <form method="dialog" id="projectForm">
+      <h3 id="projectDialogTitle">新增場次</h3>
+      <label class="field">場次名稱
+        <input name="projectTitle" required maxlength="40" placeholder="11/8 高雄">
+      </label>
+      <label class="field">目標人數（0~100）
+        <input name="maxQuota" type="number" inputmode="numeric" min="0" max="100" value="40" required>
+      </label>
+      <label class="switch-row"><span>開放備取</span><input name="allowWaitingList" type="checkbox"></label>
+      <div id="projectExtra" hidden>
+        <p id="storageInfo" class="muted"></p>
+        <button type="button" id="btnExportCsv" class="btn-small">匯出名單 CSV</button>
+        <button type="button" id="btnDeleteProject" class="btn-danger">刪除此場次</button>
+      </div>
+      <menu>
+        <button type="button" value="cancel" data-close>取消</button>
+        <button value="ok" class="btn-primary">儲存</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="confirmDialog">
+    <form method="dialog">
+      <h3>確認人數</h3>
+      <ul id="confirmList" class="confirm-list"></ul>
+      <p id="aiNote" class="muted"></p>
+      <menu>
+        <button type="button" value="cancel" data-close>取消</button>
+        <button value="ok" class="btn-primary">加入</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="previewDialog" class="preview"><img id="previewImg" alt="照片預覽"><form method="dialog"><menu><button value="close">關閉</button></menu></form></dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "caricature-counter",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "TZ=Asia/Taipei node --test \"tests/*.test.mjs\""
+  },
+  "devDependencies": {
+    "fake-indexeddb": "6.2.7"
+  }
+}
