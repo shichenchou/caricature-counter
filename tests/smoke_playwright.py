@@ -149,6 +149,11 @@ try:
         expect(page.locator('#emptyState')).to_be_visible()
         expect(page.locator('#btnDeleteProject')).to_be_disabled()
         page.screenshot(path=str(SHOTS / '8-project-deleted.png'))
+
+        page.click('#btnBackMenu')
+        unlock(page)
+        expect(page.locator('#emptyState')).to_be_visible()
+        page.screenshot(path=str(SHOTS / '10-back-menu-relock.png'))
         browser.close()
 finally:
     server.terminate()

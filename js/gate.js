@@ -18,6 +18,7 @@ export function setupGate(onUnlock) {
   const input = document.getElementById('passwordInput');
   const error = document.getElementById('passwordError');
   let unlocked = false;
+  let initialized = false;
   let checking = false;
 
   document.getElementById('btnOpenCounter').addEventListener('click', () => {
@@ -31,6 +32,14 @@ export function setupGate(onUnlock) {
   // app.js 的 [data-close] 要等解鎖後 init() 才綁，這裡自己處理
   dialog.querySelector('[data-close]').addEventListener('click', () => dialog.close('cancel'));
 
+  // 返回選單等於上鎖，再進來要重新輸入密碼
+  document.getElementById('btnBackMenu').addEventListener('click', () => {
+    document.querySelectorAll('dialog[open]').forEach((d) => d.close('cancel'));
+    unlocked = false;
+    document.body.classList.add('locked');
+    launcher.hidden = false;
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (checking || unlocked) return;
@@ -42,7 +51,10 @@ export function setupGate(onUnlock) {
         dialog.close('ok');
         launcher.hidden = true;
         document.body.classList.remove('locked');
-        onUnlock();
+        if (!initialized) {
+          initialized = true;
+          onUnlock();
+        }
       } else {
         error.hidden = false;
         input.value = '';
