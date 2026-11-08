@@ -113,8 +113,8 @@ function renderStatus(st) {
     ['正取', `${st.regularCount} / ${p.maxQuota}`],
     ...(p.allowWaitingList ? [['備取', `${st.waitingCount} 人`]] : []),
     ['名額', remainText],
-    ['未傳老師', `${st.unsentPhotos} 張照片 共 ${st.unsentPeople} 人`],
-    ['已傳老師', `${st.sentPhotos} 張`],
+    ['未傳送', `${st.unsentPhotos} 張照片\n共 ${st.unsentPeople} 人`],
+    ['已傳送', `${st.sentPhotos} 張`],
   ];
   const el = $('statusBar');
   el.replaceChildren();
