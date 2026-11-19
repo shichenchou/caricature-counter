@@ -1,5 +1,5 @@
 // 每次改任何檔案都要把版本 +1，iPhone 才會更新快取
-const CACHE = 'cc-v10';
+const CACHE = 'cc-v11';
 const SHARDS = [1, 2, 3, 4, 5].map((i) => `vendor/model/ssdlite_mobilenet_v2/group1-shard${i}of5`);
 const ASSETS = [
   './',
@@ -23,6 +23,9 @@ const ASSETS = [
   'vendor/coco-ssd.min.js',
   'vendor/model/ssdlite_mobilenet_v2/model.json',
   ...SHARDS,
+  'vendor/blazeface.min.js',
+  'vendor/model/blazeface/model.json',
+  'vendor/model/blazeface/group1-shard1of1.bin',
 ];
 
 self.addEventListener('install', (event) => {
