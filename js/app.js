@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { computeStatus, clampQuota } from './quota.js';
-import { prepareImage } from './image.js';
+import { prepareImage, releaseCanvas, withTimeout } from './image.js';
 import { detectCount, loadModel } from './detect.js';
 import { shareFiles, fileNameFor, safeName } from './share.js';
 import { toCsv, formatTime, pad2 } from './csv.js';
@@ -41,12 +41,33 @@ function writeActive(id) {
   try { localStorage.setItem(ACTIVE_KEY, id); } catch { /* 私密模式等情況可忽略 */ }
 }
 
-function toast(msg) {
+const DETECT_TIMEOUT = 20000;
+
+// persist：不自動消失，點一下才關（處理中進度、要讓使用者截圖的錯誤）
+function toast(msg, { spinner = false, persist = false } = {}) {
   const el = $('toast');
-  el.textContent = msg;
+  if (spinner) {
+    const spin = document.createElement('span');
+    spin.className = 'spinner';
+    spin.setAttribute('aria-hidden', 'true');
+    el.replaceChildren(spin, msg);
+  } else {
+    el.textContent = msg;
+  }
   el.hidden = false;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => { el.hidden = true; }, 2500);
+  if (!persist) toast.timer = setTimeout(() => { el.hidden = true; }, 2500);
+}
+
+function hideToast() {
+  clearTimeout(toast.timer);
+  $('toast').hidden = true;
+}
+
+function errText(err) {
+  if (!err) return '未知錯誤';
+  const msg = err.message || String(err);
+  return err.name && err.name !== 'Error' ? `${err.name}: ${msg}` : msg;
 }
 
 function newId(prefix) {
@@ -313,7 +334,7 @@ function openPreview(photo) {
   dlg.showModal();
 }
 
-function confirmCounts(prepared) {
+function confirmCounts(prepared, skippedNote = '') {
   return new Promise((resolve) => {
     const dlg = $('confirmDialog');
     const urls = [];
@@ -353,6 +374,8 @@ function confirmCounts(prepared) {
     $('aiNote').textContent = prepared.some((p) => p.aiCount == null)
       ? 'AI 模型還沒載入（第一次要在有網路時開啟），請手動確認人數。'
       : '備註：人與動物皆算一位，請確認後再加入。';
+    // 對話框在最上層會蓋住 toast，略過的張數也寫在這裡
+    if (skippedNote) $('aiNote').textContent += `\n${skippedNote}`;
     const saveBtn = $('btnSaveBatch');
     saveBtn.textContent = '💾 存到相簿';
     // 分享要在 click 裡、任何 await 之前呼叫，iOS 才認定是使用者手勢
@@ -393,29 +416,41 @@ async function onFilesPicked(e) {
   state.busy = true;
   $('btnAdd').classList.add('disabled');
   try {
-    toast(`處理 ${files.length} 張照片中…`);
     const prepared = [];
+    const errors = [];
     let aiFailed = false;
-    for (const file of files) {
+    for (const [i, file] of files.entries()) {
+      toast(`處理第 ${i + 1}/${files.length} 張…`, { spinner: true, persist: true });
       try {
         const { thumb, original, detectCanvas } = await prepareImage(file);
         let count = null;
-        if (!aiFailed) {
-          try {
-            count = await detectCount(detectCanvas);
-          } catch (err) {
-            aiFailed = true;
-            console.warn('AI 辨識失敗', err);
-          }
+        try {
+          if (!aiFailed) count = await withTimeout(detectCount(detectCanvas), DETECT_TIMEOUT, 'AI 辨識逾時');
+        } catch (err) {
+          // 逾時或失敗後面幾張都不跑 AI，改手動確認
+          aiFailed = true;
+          console.warn('AI 辨識失敗', err);
+        } finally {
+          releaseCanvas(detectCanvas);
         }
         prepared.push({ thumb, original, count });
       } catch (err) {
         console.warn(err);
-        toast('有一張照片讀不到，已略過');
+        errors.push(errText(err));
       }
     }
-    if (!prepared.length) return;
-    if (!(await confirmCounts(prepared))) return;
+    if (!prepared.length) {
+      toast(`${files.length} 張照片都處理失敗：${errors[0]}（點一下關閉）`, { persist: true });
+      return;
+    }
+    let skippedNote = '';
+    if (errors.length) {
+      skippedNote = `${errors.length} 張照片讀不到，已略過：${errors[0]}`;
+      toast(skippedNote);
+    } else {
+      hideToast();
+    }
+    if (!(await confirmCounts(prepared, skippedNote))) return;
     const kept = prepared.filter((p) => !p.removed);
     if (!kept.length) return;
     if (state.project?.id !== project.id) {
@@ -725,6 +760,7 @@ function bindEvents() {
   $('btnExportCsv').addEventListener('click', exportCsv);
   $('btnDeleteProject').addEventListener('click', deleteCurrentProject);
   $('previewImg').addEventListener('click', () => $('previewDialog').close());
+  $('toast').addEventListener('click', hideToast);
   $('selectTools').addEventListener('click', onQuickSelect);
   const main = $('main');
   main.addEventListener('click', onCardClick);

@@ -1,5 +1,5 @@
 // 每次改任何檔案都要把版本 +1，iPhone 才會更新快取
-const CACHE = 'cc-v9';
+const CACHE = 'cc-v10';
 const SHARDS = [1, 2, 3, 4, 5].map((i) => `vendor/model/ssdlite_mobilenet_v2/group1-shard${i}of5`);
 const ASSETS = [
   './',
