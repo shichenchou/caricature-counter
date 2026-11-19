@@ -32,6 +32,14 @@
 
   <main id="main">
     <p id="emptyState" class="empty" hidden>還沒有場次，先按上方的日曆圖示建立。</p>
+    <div id="selectTools" class="select-tools" role="toolbar" aria-label="快速選取" hidden>
+      <button type="button" class="btn-chip" data-sel="all">全選</button>
+      <button type="button" class="btn-chip" data-sel="none">全不選</button>
+      <button type="button" class="btn-chip" data-sel="invert">反選</button>
+      <button type="button" class="btn-chip" data-sel="unsent">未 AirDrop</button>
+      <button type="button" class="btn-chip" data-sel="unsynced">相簿未同步</button>
+    </div>
+    <div id="listLoading" class="list-loading" hidden><span class="spinner spinner-lg" aria-hidden="true"></span><span class="sr-only">載入中…</span></div>
     <h2 id="regularTitle" class="section-title">正取</h2>
     <ul id="regularList" class="cards"></ul>
     <h2 id="waitingTitle" class="section-title waiting" hidden>備取</h2>

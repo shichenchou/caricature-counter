@@ -6,6 +6,7 @@ import { shareFiles, fileNameFor, safeName } from './share.js';
 import { toCsv, formatTime, pad2 } from './csv.js';
 import { nearestCity, defaultTitle } from './places.js';
 import { setupGate } from './gate.js';
+import { selectAll, selectNone, invert, selectUnsent, selectUnsynced } from './select.js';
 
 const ICONS = {
   trash: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
@@ -29,6 +30,8 @@ const state = {
   originals: new Map(),
   busy: false,
   thumbJobs: new Map(),
+  originalJobs: new Map(),
+  preloadGen: 0,
 };
 
 function readActive() {
@@ -55,6 +58,8 @@ function revokeThumbs() {
   state.thumbUrls.clear();
   state.originals.clear();
   state.thumbJobs.clear();
+  state.originalJobs.clear();
+  state.preloadGen++;
 }
 
 function forgetRecord(id) {
@@ -63,34 +68,88 @@ function forgetRecord(id) {
   state.thumbUrls.delete(id);
   state.originals.delete(id);
   state.thumbJobs.delete(id);
+  state.originalJobs.delete(id);
   state.selected.delete(id);
 }
 
-// 取縮圖時順便把原圖 Blob 留在記憶體，按傳送時才能不 await 直接叫分享選單
 async function thumbUrl(recordId) {
   if (state.thumbUrls.has(recordId)) return state.thumbUrls.get(recordId);
   if (state.thumbJobs.has(recordId)) return state.thumbJobs.get(recordId);
   const job = (async () => {
-    const photo = await db.getPhoto(recordId);
+    const thumb = await db.getThumb(recordId);
     if (state.thumbJobs.get(recordId) !== job) return '';
     state.thumbJobs.delete(recordId);
-    if (!photo) return '';
-    const url = URL.createObjectURL(new Blob([photo.thumb.data], { type: photo.thumb.type }));
+    if (!thumb) return '';
+    const url = URL.createObjectURL(new Blob([thumb.data], { type: thumb.type }));
     state.thumbUrls.set(recordId, url);
-    state.originals.set(recordId, new Blob([photo.original.data], { type: photo.original.type }));
     return url;
   })();
   state.thumbJobs.set(recordId, job);
   return job;
 }
 
+// 原圖要先放進記憶體，按 AirDrop / 存相簿時才能不 await 直接叫分享選單（iOS 手勢限制）
+function loadOriginal(recordId) {
+  if (state.originals.has(recordId)) return Promise.resolve();
+  if (state.originalJobs.has(recordId)) return state.originalJobs.get(recordId);
+  const job = (async () => {
+    let photo;
+    try {
+      photo = await db.getPhoto(recordId);
+    } catch (err) {
+      console.warn('讀取原圖失敗', err);
+    }
+    // 換場次或刪除後 job 會被移除，這時結果作廢
+    if (state.originalJobs.get(recordId) !== job) return;
+    state.originalJobs.delete(recordId);
+    if (photo) state.originals.set(recordId, new Blob([photo.original.data], { type: photo.original.type }));
+    if (state.selected.has(recordId)) updateSendButton();
+  })();
+  state.originalJobs.set(recordId, job);
+  return job;
+}
+
+function ensureOriginals(ids) {
+  ids.forEach(loadOriginal);
+  updateSendButton();
+}
+
+const idle = () => new Promise((resolve) => {
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 500 });
+  else setTimeout(resolve, 30);
+});
+
+// 背景一張一張預載未傳送組的原圖，讓卡片上的單張 AirDrop 按一次就能分享
+async function preloadUnsent() {
+  const gen = ++state.preloadGen;
+  await Promise.allSettled([...state.thumbJobs.values()]);
+  const ids = state.records.filter((r) => !r.isSent).map((r) => r.id);
+  for (const id of ids) {
+    await idle();
+    if (gen !== state.preloadGen) return;
+    if (!state.records.some((r) => r.id === id && !r.isSent)) continue;
+    await loadOriginal(id);
+  }
+}
+
 async function switchProject(id) {
   revokeThumbs();
   state.selected.clear();
   state.project = state.projects.find((p) => p.id === id) ?? null;
-  state.records = state.project ? await db.listRecords(state.project.id) : [];
+  // 先清掉舊場次的列表，避免載入期間還能勾到舊場次的組
+  state.records = [];
+  render();
+  // 超過 150ms 才顯示，避免很快載完時閃一下
+  const spinnerTimer = setTimeout(() => { $('listLoading').hidden = false; }, 150);
+  try {
+    state.records = state.project ? await db.listRecords(state.project.id) : [];
+  } finally {
+    clearTimeout(spinnerTimer);
+    $('listLoading').hidden = true;
+  }
   if (state.project) writeActive(state.project.id);
   render();
+  if (state.project) preloadUnsent();
 }
 
 function renderProjectSelect() {
@@ -137,11 +196,13 @@ function renderStatus(st) {
 
 function renderCard(item) {
   const li = document.createElement('li');
-  li.className = `card ${item.isWaiting ? 'is-waiting' : 'is-regular'}${item.isSent ? ' is-sent' : ''}`;
+  const cachedThumb = state.thumbUrls.get(item.id);
+  li.className = `card ${item.isWaiting ? 'is-waiting' : 'is-regular'}${item.isSent ? ' is-sent' : ''}${cachedThumb ? '' : ' thumb-loading'}`;
   li.dataset.id = item.id;
   li.innerHTML = `
     <label class="pick"><input type="checkbox" class="pick-box" aria-label="勾選傳送"></label>
     <img class="thumb" alt="">
+    <span class="spinner thumb-spinner" aria-hidden="true"></span>
     <div class="body">
       <div class="tag"></div>
       <div class="counter">
@@ -167,19 +228,42 @@ function renderCard(item) {
   album.textContent = item.albumSaved ? '📷 相簿已同步' : '相簿未同步';
   li.querySelector('[data-act=toggleSent]').textContent = item.isSent ? '改回未傳' : '標為已傳';
   li.querySelector('.pick-box').checked = state.selected.has(item.id);
-  thumbUrl(item.id).then((url) => { li.querySelector('.thumb').src = url; });
+  const img = li.querySelector('.thumb');
+  if (cachedThumb) {
+    img.src = cachedThumb;
+    return li;
+  }
+  const done = () => li.classList.remove('thumb-loading');
+  img.addEventListener('load', done, { once: true });
+  img.addEventListener('error', done, { once: true });
+  thumbUrl(item.id).then((url) => {
+    if (url) img.src = url;
+    else done();
+  }, done);
   return li;
+}
+
+function setButtonLabel(btn, preparing, label, n) {
+  if (!preparing) {
+    btn.textContent = label;
+    return;
+  }
+  const spin = document.createElement('span');
+  spin.className = 'spinner';
+  spin.setAttribute('aria-hidden', 'true');
+  btn.replaceChildren(spin, `準備中…（${n}）`);
 }
 
 function updateSendButton() {
   const n = state.selected.size;
   $('selectionBar').hidden = n === 0;
+  const preparing = [...state.selected].some((id) => !state.originals.has(id) && state.originalJobs.has(id));
   const btn = $('btnSendSelected');
-  btn.disabled = n === 0;
-  btn.textContent = `🚀 AirDrop（${n}）`;
+  btn.disabled = n === 0 || preparing;
+  setButtonLabel(btn, preparing, `🚀 AirDrop（${n}）`, n);
   const save = $('btnSaveSelected');
-  save.disabled = n === 0;
-  save.textContent = `💾 存相簿（${n}）`;
+  save.disabled = n === 0 || preparing;
+  setButtonLabel(save, preparing, `💾 存相簿（${n}）`, n);
   const del = $('btnDeleteSelected');
   del.disabled = n === 0;
   del.querySelector('.count').textContent = `（${n}）`;
@@ -188,11 +272,13 @@ function updateSendButton() {
 function render() {
   renderProjectSelect();
   const has = Boolean(state.project);
+  $('listLoading').hidden = true;
   $('emptyState').hidden = has;
   $('btnAdd').classList.toggle('disabled', !has || state.busy);
   $('fileInput').disabled = !has;
   $('btnSettings').disabled = !has;
   $('btnDeleteProject').disabled = !has;
+  $('selectTools').hidden = !has || state.records.length === 0;
   if (!has) {
     $('statusBar').replaceChildren();
     $('regularList').replaceChildren();
@@ -361,6 +447,9 @@ async function onFilesPicked(e) {
       return;
     }
     state.records.push(...entries.map((x) => x.record));
+    for (const { record, photo } of entries) {
+      state.originals.set(record.id, new Blob([photo.original.data], { type: photo.original.type }));
+    }
     render();
     toast(`已加入 ${entries.length} 組`);
   } finally {
@@ -373,7 +462,7 @@ async function sendRecords(ids) {
   if (!ids.length) return;
   const missing = ids.filter((id) => !state.originals.has(id));
   if (missing.length) {
-    await Promise.all(missing.map(thumbUrl));
+    await Promise.all(missing.map(loadOriginal));
     const lost = ids.filter((id) => !state.originals.has(id));
     toast(lost.length ? `有 ${lost.length} 組照片遺失，無法傳送，請取消勾選或刪除` : '照片準備好了，請再按一次傳送');
     return;
@@ -397,7 +486,10 @@ async function sendRecords(ids) {
       for (const r of recs) { r.isSent = false; r.sentAt = null; }
       toast('已分享，但標記失敗，請手動按「標為已傳」');
     }
-    ids.forEach((id) => state.selected.delete(id));
+    ids.forEach((id) => {
+      state.selected.delete(id);
+      if (state.records.find((r) => r.id === id)?.isSent) state.originals.delete(id);
+    });
     render();
   } else if (result === 'unsupported') {
     toast('這個瀏覽器不支援分享檔案，請用 iPhone Safari');
@@ -411,7 +503,7 @@ async function saveSelectedToAlbum() {
   if (!ids.length) return;
   const missing = ids.filter((id) => !state.originals.has(id));
   if (missing.length) {
-    await Promise.all(missing.map(thumbUrl));
+    await Promise.all(missing.map(loadOriginal));
     const lost = ids.filter((id) => !state.originals.has(id));
     toast(lost.length ? `有 ${lost.length} 組照片遺失，無法存相簿，請取消勾選或刪除` : '照片準備好了，請再按一次存相簿');
     return;
@@ -444,7 +536,7 @@ async function saveSelectedToAlbum() {
 }
 
 async function previewCard(id) {
-  if (!state.originals.has(id)) await thumbUrl(id);
+  if (!state.originals.has(id)) await loadOriginal(id);
   const blob = state.originals.get(id);
   if (blob) openPreview(blob);
   else toast('找不到這組照片');
@@ -475,6 +567,7 @@ async function onCardClick(e) {
         rec.isSent = !rec.isSent;
         rec.sentAt = rec.isSent ? Date.now() : null;
         await db.saveRecord(rec);
+        if (!rec.isSent) loadOriginal(id);
         break;
       case 'delete': {
         if (!confirm('確定刪除這一組？編號會重新計算。')) return;
@@ -577,6 +670,31 @@ async function deleteSelected() {
   render();
 }
 
+const QUICK_SELECT = {
+  all: { pick: () => selectAll(state.records) },
+  none: { pick: () => selectNone() },
+  invert: { pick: () => invert(state.records, state.selected) },
+  unsent: { pick: () => selectUnsent(state.records), empty: '沒有未 AirDrop 的組' },
+  unsynced: { pick: () => selectUnsynced(state.records), empty: '沒有相簿未同步的組' },
+};
+
+function onQuickSelect(e) {
+  const btn = e.target.closest('button[data-sel]');
+  const rule = btn && QUICK_SELECT[btn.dataset.sel];
+  if (!rule || !state.project) return;
+  const next = rule.pick();
+  if (rule.empty && next.size === 0) {
+    toast(rule.empty);
+    return;
+  }
+  state.selected = next;
+  // 只改勾選狀態，不重建列表，避免縮圖重新載入
+  document.querySelectorAll('#main .card').forEach((li) => {
+    li.querySelector('.pick-box').checked = state.selected.has(li.dataset.id);
+  });
+  ensureOriginals([...state.selected]);
+}
+
 async function exportCsv() {
   const p = state.project;
   if (!p) return;
@@ -607,14 +725,19 @@ function bindEvents() {
   $('btnExportCsv').addEventListener('click', exportCsv);
   $('btnDeleteProject').addEventListener('click', deleteCurrentProject);
   $('previewImg').addEventListener('click', () => $('previewDialog').close());
+  $('selectTools').addEventListener('click', onQuickSelect);
   const main = $('main');
   main.addEventListener('click', onCardClick);
   main.addEventListener('change', (e) => {
     if (!e.target.classList.contains('pick-box')) return;
     const id = e.target.closest('.card').dataset.id;
-    if (e.target.checked) state.selected.add(id);
-    else state.selected.delete(id);
-    updateSendButton();
+    if (e.target.checked) {
+      state.selected.add(id);
+      ensureOriginals([id]);
+    } else {
+      state.selected.delete(id);
+      updateSendButton();
+    }
   });
 }
 
@@ -628,8 +751,10 @@ async function init() {
   const active = readActive();
   await switchProject(state.projects.find((p) => p.id === active)?.id ?? state.projects[0]?.id ?? null);
   const warmUp = () => loadModel().catch((e) => console.warn('AI 模型載入失敗', e));
-  if ('serviceWorker' in navigator) navigator.serviceWorker.ready.then(warmUp);
-  else warmUp();
+  // 晚 3 秒才載 AI 模型，讓列表和縮圖先出來；這之前按相機 detectCount 會自己載
+  const warmUpLater = () => setTimeout(warmUp, 3000);
+  if ('serviceWorker' in navigator) navigator.serviceWorker.ready.then(warmUpLater);
+  else warmUpLater();
 }
 
 setupGate(init);

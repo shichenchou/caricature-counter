@@ -18,6 +18,7 @@ test('專案、紀錄、照片的存取與連帶刪除', async () => {
   const photo = await db.getPhoto('r1');
   assert.equal(photo.original, 'O1');
   assert.equal(photo.thumb, 'T1');
+  assert.equal(await db.getThumb('r1'), 'T1');
 
   await db.saveRecord(r('r1', 'p1', { count: 5 }));
   assert.equal((await db.listRecords('p1'))[0].count, 5);
@@ -27,12 +28,15 @@ test('專案、紀錄、照片的存取與連帶刪除', async () => {
   await db.deleteRecord('r1');
   assert.equal((await db.listRecords('p1')).length, 0);
   assert.equal(await db.getPhoto('r1'), undefined);
+  assert.equal(await db.getThumb('r1'), undefined);
 
   await db.addRecords([{ record: r('r3', 'p1'), photo: { original: 'O3', thumb: 'T3' } }]);
   await db.deleteProject('p1');
   assert.deepEqual((await db.listProjects()).map((p) => p.id), ['p2']);
   assert.equal((await db.listRecords('p1')).length, 0);
   assert.equal(await db.getPhoto('r3'), undefined);
+  assert.equal(await db.getThumb('r3'), undefined);
+  assert.equal(await db.getThumb('r2'), 'T2');
   assert.equal((await db.listRecords('p2')).length, 1);
 });
 
@@ -43,6 +47,7 @@ test('addRecords 中途丟錯時整批不寫入', async () => {
   ]));
   assert.equal((await db.listRecords('p9')).length, 0);
   assert.equal(await db.getPhoto('x1'), undefined);
+  assert.equal(await db.getThumb('x1'), undefined);
 });
 
 test('deleteRecords 一次刪多筆紀錄和照片，其他筆不受影響', async () => {
@@ -55,5 +60,8 @@ test('deleteRecords 一次刪多筆紀錄和照片，其他筆不受影響', asy
   assert.deepEqual((await db.listRecords('p5')).map((x) => x.id), ['d3']);
   assert.equal(await db.getPhoto('d1'), undefined);
   assert.equal(await db.getPhoto('d2'), undefined);
+  assert.equal(await db.getThumb('d1'), undefined);
+  assert.equal(await db.getThumb('d2'), undefined);
   assert.equal((await db.getPhoto('d3')).thumb, 'T');
+  assert.equal(await db.getThumb('d3'), 'T');
 });

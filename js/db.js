@@ -1,17 +1,31 @@
 const DB_NAME = 'caricature-counter';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let dbPromise = null;
 
 function openDb() {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
+      req.onupgradeneeded = (event) => {
         const db = req.result;
-        db.createObjectStore('projects', { keyPath: 'id' });
-        const records = db.createObjectStore('records', { keyPath: 'id' });
-        records.createIndex('projectId', 'projectId');
-        db.createObjectStore('photos', { keyPath: 'recordId' });
+        if (event.oldVersion < 1) {
+          db.createObjectStore('projects', { keyPath: 'id' });
+          const records = db.createObjectStore('records', { keyPath: 'id' });
+          records.createIndex('projectId', 'projectId');
+          db.createObjectStore('photos', { keyPath: 'recordId' });
+        }
+        if (event.oldVersion < 2) {
+          // 縮圖另存一張表，開列表時才不用把整張原圖讀進來；搬資料跟升級同一個 transaction，失敗整個回滾
+          const thumbs = db.createObjectStore('thumbs', { keyPath: 'recordId' });
+          const cursorReq = req.transaction.objectStore('photos').openCursor();
+          cursorReq.onsuccess = () => {
+            const cursor = cursorReq.result;
+            if (!cursor) return;
+            const { recordId, thumb } = cursor.value;
+            if (thumb) thumbs.put({ recordId, thumb });
+            cursor.continue();
+          };
+        }
       };
       req.onsuccess = () => {
         const db = req.result;
@@ -79,12 +93,14 @@ export function saveRecords(records) {
 }
 
 export function addRecords(entries) {
-  return run(['records', 'photos'], 'readwrite', (tx) => {
+  return run(['records', 'photos', 'thumbs'], 'readwrite', (tx) => {
     const records = tx.objectStore('records');
     const photos = tx.objectStore('photos');
+    const thumbs = tx.objectStore('thumbs');
     for (const { record, photo } of entries) {
       records.add(record);
       photos.put({ recordId: record.id, original: photo.original, thumb: photo.thumb });
+      thumbs.put({ recordId: record.id, thumb: photo.thumb });
     }
   });
 }
@@ -93,33 +109,43 @@ export function getPhoto(recordId) {
   return run(['photos'], 'readonly', (tx) => reqP(tx.objectStore('photos').get(recordId)));
 }
 
+export async function getThumb(recordId) {
+  const row = await run(['thumbs'], 'readonly', (tx) => reqP(tx.objectStore('thumbs').get(recordId)));
+  return row?.thumb;
+}
+
 export function deleteRecord(id) {
-  return run(['records', 'photos'], 'readwrite', (tx) => {
+  return run(['records', 'photos', 'thumbs'], 'readwrite', (tx) => {
     tx.objectStore('records').delete(id);
     tx.objectStore('photos').delete(id);
+    tx.objectStore('thumbs').delete(id);
   });
 }
 
 export function deleteRecords(ids) {
-  return run(['records', 'photos'], 'readwrite', (tx) => {
+  return run(['records', 'photos', 'thumbs'], 'readwrite', (tx) => {
     const records = tx.objectStore('records');
     const photos = tx.objectStore('photos');
+    const thumbs = tx.objectStore('thumbs');
     for (const id of ids) {
       records.delete(id);
       photos.delete(id);
+      thumbs.delete(id);
     }
   });
 }
 
 export function deleteProject(projectId) {
-  return run(['projects', 'records', 'photos'], 'readwrite', (tx) => {
+  return run(['projects', 'records', 'photos', 'thumbs'], 'readwrite', (tx) => {
     tx.objectStore('projects').delete(projectId);
     const photos = tx.objectStore('photos');
+    const thumbs = tx.objectStore('thumbs');
     const cursorReq = tx.objectStore('records').index('projectId').openCursor(projectId);
     cursorReq.onsuccess = () => {
       const cursor = cursorReq.result;
       if (!cursor) return;
       photos.delete(cursor.value.id);
+      thumbs.delete(cursor.value.id);
       cursor.delete();
       cursor.continue();
     };
